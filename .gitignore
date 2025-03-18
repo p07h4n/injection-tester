@@ -1,0 +1,20 @@
+
+---
+
+### File: `.gitignore`
+
+```gitignore
+# Binaries
+/injection-tester
+*.exe
+*.out
+
+# Build artifacts
+/bin/
+/obj/
+
+# IDE/editor files
+*.swp
+*~
+.idea/
+.vscode/
