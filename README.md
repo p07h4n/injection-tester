@@ -60,4 +60,4 @@ Build and run the tool using the following commands:
 go build -o injection-tester
 
 # Run the tool
-./injection-tester <target_url> <parameter>
+./injection-tester http://target.com/test=
